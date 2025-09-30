@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+
+    <title>Parâmetros do PID</title>
+    <style>
+        :root {
+            --valor-size: 54px;
+            --font-large: 20px;
+            --button-font: 18px;
+            --gap: 10px;
+            --arrow-size: 64px;
+            --valor-font: 20px;
+        }
+
+        html,
+        body {
+            touch-action: manipulation;
+        }
+
+        /* evita double-tap zoom */
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #f4f4f4;
+            margin: 0;
+            padding: 12px;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        h1 {
+            margin: 8px 0 20px 0;
+            font-size: 24px;
+        }
+
+        .parametro {
+            margin: 12px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: nowrap;
+        }
+
+        .label {
+            font-size: var(--font-large);
+            font-weight: 700;
+            margin-right: 6px;
+            min-width: 64px;
+            text-align: right;
+        }
+
+        .bloco {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .grupo {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--gap);
+        }
+
+        .caixa {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0 4px;
+        }
+
+        .valor {
+            border: 2px solid #333;
+            border-radius: 10px;
+            width: var(--valor-size);
+            height: var(--valor-size);
+            line-height: calc(var(--valor-size));
+            text-align: center;
+            background: white;
+            font-size: var(--valor-font);
+            font-weight: 700;
+            touch-action: manipulation;
+            box-sizing: border-box;
+        }
+
+        .seta {
+            cursor: pointer;
+            font-size: 22px;
+            user-select: none;
+            margin: 6px 0;
+            width: var(--arrow-size);
+            height: 40px;
+            line-height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .botoes-container {
+            margin-top: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 12px 22px;
+            font-size: var(--button-font);
+            border-radius: 12px;
+            border: 2px solid #333;
+            background: #fff;
+            cursor: pointer;
+            min-width: 200px;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .btn-status {
+            color: white;
+            border: none;
+            transition: background-color 160ms ease;
+        }
+
+        .btn-status.green {
+            background-color: #28a745;
+        }
+
+        .btn-status.red {
+            background-color: #dc3545;
+        }
+
+        #wsStatus {
+            margin-top: 8px;
+            font-size: 15px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        @media (max-width:420px) {
+            :root {
+                --valor-size: 50px;
+                --font-large: 18px;
+                --button-font: 16px;
+                --gap: 8px;
+                --arrow-size: 68px;
+                --valor-font: 18px;
+            }
+
+            .label {
+                min-width: 56px;
+                font-size: 18px;
+            }
+
+            h1 {
+                font-size: 22px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="fitaStatus" style="margin-top:12px;font-weight:700;">
+        Fita: <span id="fitaBadge" style="padding:4px 10px;border-radius:8px;background:#ccc;">INICIADO</span>
+    </div>
+
+    <h1>Parâmetros do PID</h1>
+
+    <!-- Kp -->
+    <div class="parametro">
+        <div class="label">Kp =</div>
+        <div class="bloco">
+            <div class="grupo">
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('kp0',1,0,9)">▲</div>
+                    <div class="valor" id="kp0">0</div>
+                    <div class="seta" onclick="alterar('kp0',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('kp1',1,0,9)">▲</div>
+                    <div class="valor" id="kp1">0</div>
+                    <div class="seta" onclick="alterar('kp1',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('kp2',1,0,9)">▲</div>
+                    <div class="valor" id="kp2">0</div>
+                    <div class="seta" onclick="alterar('kp2',-1,0,9)">▼</div>
+                </div>
+            </div>
+            <div style="font-size:16px;margin-left:6px;margin-right:6px;">×10^</div>
+            <div class="caixa">
+                <div class="seta" onclick="alterar('kp3',1,-99,99)">▲</div>
+                <div class="valor" id="kp3">0</div>
+                <div class="seta" onclick="alterar('kp3',-1,-99,99)">▼</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ki -->
+    <div class="parametro">
+        <div class="label">Ki =</div>
+        <div class="bloco">
+            <div class="grupo">
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('ki0',1,0,9)">▲</div>
+                    <div class="valor" id="ki0">0</div>
+                    <div class="seta" onclick="alterar('ki0',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('ki1',1,0,9)">▲</div>
+                    <div class="valor" id="ki1">0</div>
+                    <div class="seta" onclick="alterar('ki1',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('ki2',1,0,9)">▲</div>
+                    <div class="valor" id="ki2">0</div>
+                    <div class="seta" onclick="alterar('ki2',-1,0,9)">▼</div>
+                </div>
+            </div>
+            <div style="font-size:16px;margin-left:6px;margin-right:6px;">×10^</div>
+            <div class="caixa">
+                <div class="seta" onclick="alterar('ki3',1,-99,99)">▲</div>
+                <div class="valor" id="ki3">0</div>
+                <div class="seta" onclick="alterar('ki3',-1,-99,99)">▼</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Kd -->
+    <div class="parametro">
+        <div class="label">Kd =</div>
+        <div class="bloco">
+            <div class="grupo">
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('kd0',1,0,9)">▲</div>
+                    <div class="valor" id="kd0">0</div>
+                    <div class="seta" onclick="alterar('kd0',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('kd1',1,0,9)">▲</div>
+                    <div class="valor" id="kd1">0</div>
+                    <div class="seta" onclick="alterar('kd1',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('kd2',1,0,9)">▲</div>
+                    <div class="valor" id="kd2">0</div>
+                    <div class="seta" onclick="alterar('kd2',-1,0,9)">▼</div>
+                </div>
+            </div>
+            <div style="font-size:16px;margin-left:6px;margin-right:6px;">×10^</div>
+            <div class="caixa">
+                <div class="seta" onclick="alterar('kd3',1,-99,99)">▲</div>
+                <div class="valor" id="kd3">0</div>
+                <div class="seta" onclick="alterar('kd3',-1,-99,99)">▼</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- v -->
+    <div class="parametro">
+        <div class="label">v =</div>
+        <div class="bloco">
+            <div class="grupo">
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('v0',1,0,9)">▲</div>
+                    <div class="valor" id="v0">0</div>
+                    <div class="seta" onclick="alterar('v0',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('v1',1,0,9)">▲</div>
+                    <div class="valor" id="v1">0</div>
+                    <div class="seta" onclick="alterar('v1',-1,0,9)">▼</div>
+                </div>
+                <div class="caixa">
+                    <div class="seta" onclick="alterar('v2',1,0,9)">▲</div>
+                    <div class="valor" id="v2">0</div>
+                    <div class="seta" onclick="alterar('v2',-1,0,9)">▼</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="botoes-container">
+        <button id="btnAtualizar" class="btn" onclick="atualizar()">Atualizar</button>
+        <button id="btnAndarParar" class="btn btn-status green" data-state="andar"
+            onclick="toggleAndarParar()">Andar</button>
+        <div id="wsStatus">WS: desconectado</div>
+    </div>
+    <span id="posicaoVal">--</span>
+
+
+    <script>
+        function updateFitaBadge(value) {
+            debugger
+            const badge = document.getElementById('fitaBadge');
+            const map = {
+                1: { txt: 'ESQ', color: '#007bff' },
+                2: { txt: 'DIR', color: '#ff9800' },
+                3: { txt: 'AMBOS', color: '#28a745' }
+            };
+            const cfg = map[value] || map[0];
+            badge.textContent = cfg.txt;
+            badge.style.background = cfg.color;
+        }
+    </script>
+    <script>
+        // bloqueia double-tap/pinch
+        document.addEventListener('dblclick', e => { e.preventDefault(); }, { passive: false });
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', e => {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) e.preventDefault();
+            lastTouchEnd = now;
+        }, { passive: false });
+        document.addEventListener('gesturestart', e => { e.preventDefault(); }, { passive: false });
+    </script>
+
+
+    <script>
+        function alterar(id, delta, min, max) {
+            let el = document.getElementById(id);
+            let valor = parseInt(el.innerText, 10);
+            if (isNaN(valor)) valor = 0;
+            let novo = valor + delta;
+            if (novo >= min && novo <= max) el.innerText = novo;
+        }
+
+        function getVelFromDigits() {
+            let a = parseInt(document.getElementById('v0').innerText, 10) || 0;
+            let b = parseInt(document.getElementById('v1').innerText, 10) || 0;
+            let c = parseInt(document.getElementById('v2').innerText, 10) || 0;
+            return a + b * 0.1 + c * 0.01;
+        }
+
+        function getMantissaExp(d0, d1, d2, expId) {
+            let a = parseInt(document.getElementById(d0).innerText, 10) || 0;
+            let b = parseInt(document.getElementById(d1).innerText, 10) || 0;
+            let c = parseInt(document.getElementById(d2).innerText, 10) || 0;
+            let expo = parseInt(document.getElementById(expId).innerText, 10) || 0;
+            let mant = a + b * 0.1 + c * 0.01;
+            return { mant: mant, expo: expo };
+        }
+
+        // WebSocket
+        let ws;
+        function connectWS() {
+            const host = location.hostname || "192.168.4.1";
+            ws = new WebSocket('ws://' + host + ':81/');
+            const statusEl = document.getElementById('wsStatus');
+
+            ws.onopen = () => {
+                statusEl.innerText = 'Conexão WS: conectado';
+                ws.send(JSON.stringify({ type: "request_params" }));
+            };
+            ws.onclose = () => { statusEl.innerText = 'Conexão WS: desconectado'; setTimeout(connectWS, 1000); };
+            ws.onerror = () => { statusEl.innerText = 'Conexão WS: erro'; };
+            ws.onmessage = (evt) => {
+                try {
+                    
+                    const msg = JSON.parse(evt.data);
+                    if (msg.type === "signal") updateFitaBadge(msg.value);
+                    
+                    if (msg.type === "params") {
+                        setUIFromParams(msg);
+                    }
+                    // modelo 1: KV
+                    if (msg.type === "telemetry" && msg.key === "posicao") {
+                        document.getElementById('posicaoVal').textContent = msg.value.toFixed(0);
+                    }
+
+                    // modelo 2: pacote
+                    if (msg.type === "telemetry" && msg.data) {
+                        if (typeof msg.data.posicao !== 'undefined') {
+                            document.getElementById('posicaoVal').textContent = Math.round(msg.data.posicao);
+                        }
+                        // idem para vel, wE, wD...
+                    }
+                } catch (e) {
+                    console.log("msg invalida", evt.data);
+                }
+            };
+        }
+
+        function setUIFromParams(msg) {
+            function decompose(val) {
+                
+                if (!isFinite(val) || val === 0) return [0, 0, 0, 0];
+                let expo = Math.floor(Math.log10(Math.abs(val)));
+                let mant = val / Math.pow(10, expo);
+                let scaled = Math.round(mant * 100 + 1e-12);
+                if (scaled >= 1000) { scaled = 100; expo += 1; }
+                let d0 = Math.floor(scaled / 100);
+                let d1 = Math.floor((scaled % 100) / 10);
+                let d2 = scaled % 10;
+                return [d0, d1, d2, expo];
+            }
+
+            // Kp mantissa digits: use msg.Kp (mantissa)
+            if (typeof msg.Kp === 'number') {
+                let k = decompose(msg.Kp);
+                document.getElementById('kp0').innerText = k[0];
+                document.getElementById('kp1').innerText = k[1];
+                document.getElementById('kp2').innerText = k[2];
+            }
+            if (typeof msg.multiP !== 'undefined') {
+                document.getElementById('kp3').innerText = msg.multiP;
+            } else if (typeof msg.Kp === 'number') {
+                let k = decompose(msg.Kp);
+                document.getElementById('kp3').innerText = k[3];
+            }
+
+            // Ki
+            if (typeof msg.Ki === 'number') {
+                let k = decompose(msg.Ki);
+                document.getElementById('ki0').innerText = k[0];
+                document.getElementById('ki1').innerText = k[1];
+                document.getElementById('ki2').innerText = k[2];
+            }
+            if (typeof msg.multiI !== 'undefined') {
+                document.getElementById('ki3').innerText = msg.multiI;
+            } else if (typeof msg.Ki === 'number') {
+                let k = decompose(msg.Ki);
+                document.getElementById('ki3').innerText = k[3];
+            }
+
+            // Kd
+            if (typeof msg.Kd === 'number') {
+                let k = decompose(msg.Kd);
+                document.getElementById('kd0').innerText = k[0];
+                document.getElementById('kd1').innerText = k[1];
+                document.getElementById('kd2').innerText = k[2];
+            }
+            if (typeof msg.multiD !== 'undefined') {
+                document.getElementById('kd3').innerText = msg.multiD;
+            } else if (typeof msg.Kd === 'number') {
+                let k = decompose(msg.Kd);
+                document.getElementById('kd3').innerText = k[3];
+            }
+
+            // vel
+            if (typeof msg.vel === 'number') {
+                let v = Math.abs(msg.vel);
+                let v0 = Math.floor(v);
+                let v1 = Math.floor((v - v0) * 10);
+                let v2 = Math.floor((v - v0 - v1 * 0.1) * 100);
+                document.getElementById('v0').innerText = v0;
+                document.getElementById('v1').innerText = v1;
+                document.getElementById('v2').innerText = v2;
+            }
+
+            // running
+            if (typeof msg.running !== 'undefined') {
+                const btn = document.getElementById('btnAndarParar');
+                if (msg.running) {
+                    btn.setAttribute('data-state', 'andar');
+                    btn.classList.remove('red'); btn.classList.add('green'); btn.innerText = 'Andar';
+                } else {
+                    btn.setAttribute('data-state', 'parar');
+                    btn.classList.remove('green'); btn.classList.add('red'); btn.innerText = 'Parar';
+                }
+            }
+        }
+
+        // envia dígitos (update_digits)
+        function atualizar() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) { console.log("WS não conectado"); return; }
+            const obj = {
+                type: "update_digits",
+                kp0: parseInt(document.getElementById('kp0').innerText, 10) || 0,
+                kp1: parseInt(document.getElementById('kp1').innerText, 10) || 0,
+                kp2: parseInt(document.getElementById('kp2').innerText, 10) || 0,
+                kp3: parseInt(document.getElementById('kp3').innerText, 10) || 0,
+                ki0: parseInt(document.getElementById('ki0').innerText, 10) || 0,
+                ki1: parseInt(document.getElementById('ki1').innerText, 10) || 0,
+                ki2: parseInt(document.getElementById('ki2').innerText, 10) || 0,
+                ki3: parseInt(document.getElementById('ki3').innerText, 10) || 0,
+                kd0: parseInt(document.getElementById('kd0').innerText, 10) || 0,
+                kd1: parseInt(document.getElementById('kd1').innerText, 10) || 0,
+                kd2: parseInt(document.getElementById('kd2').innerText, 10) || 0,
+                kd3: parseInt(document.getElementById('kd3').innerText, 10) || 0,
+                v0: parseInt(document.getElementById('v0').innerText, 10) || 0,
+                v1: parseInt(document.getElementById('v1').innerText, 10) || 0,
+                v2: parseInt(document.getElementById('v2').innerText, 10) || 0
+            };
+            ws.send(JSON.stringify(obj));
+            console.log("Enviado update_digits", obj);
+        }
+
+        function toggleAndarParar() {
+            const btn = document.getElementById('btnAndarParar');
+            const state = btn.getAttribute('data-state');
+            if (state === 'andar') {
+                btn.setAttribute('data-state', 'parar'); btn.classList.remove('green'); btn.classList.add('red'); btn.innerText = 'Parar';
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'toggle', state: 'parar' }));
+            } else {
+                btn.setAttribute('data-state', 'andar'); btn.classList.remove('red'); btn.classList.add('green'); btn.innerText = 'Andar';
+                if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'toggle', state: 'andar' }));
+            }
+        }
+
+        window.addEventListener('load', () => {
+            const btn = document.getElementById('btnAndarParar');
+            btn.setAttribute('data-state', 'andar');
+            btn.classList.remove('red');
+            btn.classList.add('green');
+            btn.innerText = 'Andar';
+            connectWS();
+        });
+    </script>
+</body>
+
+</html>
