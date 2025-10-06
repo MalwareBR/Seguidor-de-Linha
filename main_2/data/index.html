@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Seguidor de Linha • PID</title>
+  <style>
+    :root { --valor-size:54px; --font-large:20px; --button-font:18px; --gap:10px; --arrow-size:64px; --valor-font:20px; }
+    html,body{height:100%;touch-action:manipulation}
+    body{font-family:Arial, sans-serif;text-align:center;background:#f4f4f4;margin:0;padding:12px;-webkit-user-select:none;-webkit-touch-callout:none}
+    h1{margin:8px 0 20px 0;font-size:24px}
+
+    /* Tabs */
+    .tabs{display:flex;gap:8px;justify-content:center;margin:6px 0 12px}
+    .tab-btn{padding:10px 16px;border:2px solid #333;background:#fff;border-radius:10px;cursor:pointer;font-weight:700}
+    .tab-btn.active{background:#333;color:#fff}
+    .tab{display:none}
+    .tab.active{display:block}
+
+    .parametro{margin:12px 0;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:nowrap}
+    .label{font-size:var(--font-large);font-weight:700;margin-right:6px;min-width:64px;text-align:right}
+    .bloco{display:inline-flex;align-items:center;gap:8px}
+    .grupo{display:inline-flex;align-items:center;gap:var(--gap)}
+    .caixa{display:flex;flex-direction:column;align-items:center;margin:0 4px}
+    .valor{border:2px solid #333;border-radius:10px;width:var(--valor-size);height:var(--valor-size);line-height:calc(var(--valor-size));text-align:center;background:#fff;font-size:var(--valor-font);font-weight:700;box-sizing:border-box}
+    .seta{cursor:pointer;font-size:22px;user-select:none;margin:6px 0;width:var(--arrow-size);height:40px;display:flex;align-items:center;justify-content:center;border-radius:8px;-webkit-tap-highlight-color:transparent}
+
+    .botoes-container{margin-top:18px;display:flex;flex-direction:column;gap:12px;align-items:center}
+    .btn{padding:12px 22px;font-size:var(--button-font);border-radius:12px;border:2px solid #333;background:#fff;cursor:pointer;min-width:200px;box-shadow:0 3px 6px rgba(0,0,0,.08);-webkit-tap-highlight-color:transparent}
+    .btn-status{color:#fff;border:none;transition:background-color .16s ease}
+    .btn-status.green{background:#28a745}
+    .btn-status.red{background:#dc3545}
+    #wsStatus{margin-top:8px;font-size:15px;color:#333;font-weight:600}
+
+    /* Badges */
+    .badge{display:inline-block;padding:6px 12px;border-radius:10px;font-weight:800;color:#fff}
+    .badge.gray{background:#6c757d}
+    .badge.blue{background:#007bff}
+    .badge.orange{background:#ff9800}
+    .badge.green{background:#28a745}
+    .badge.red{background:#dc3545}
+
+    /* Info cards */
+    .card{background:#fff;border:1px solid #ddd;border-radius:12px;padding:14px;margin:10px auto;max-width:520px;text-align:left}
+    .row{display:flex;justify-content:space-between;align-items:center;margin:6px 0}
+    /* QTR grid */
+.sensor-grid{
+  display:grid;
+  grid-template-columns:repeat(16,1fr);
+  gap:8px;
+  margin-top:8px;
+}
+.sensor{
+  display:flex; flex-direction:column; align-items:center;
+}
+.sensor .slot{
+  width:100%; height:90px; border:1px solid #ddd; border-radius:8px; background:#fafafa; position:relative; overflow:hidden;
+}
+.sensor .fill{
+  position:absolute; left:0; right:0; bottom:0; height:0%;
+  background:#007bff; /* azul padrão do seu tema */
+  transition:height .12s ease;
+}
+.sensor .meta{
+  margin-top:4px; font-size:12px; font-weight:700; color:#333;
+}
+.sensor .idx{
+  display:block; font-size:11px; font-weight:800; color:#6c757d;
+}
+
+    @media (max-width:420px){
+      :root{--valor-size:50px;--font-large:18px;--button-font:16px;--gap:8px;--arrow-size:68px;--valor-font:18px}
+      .label{min-width:56px;font-size:18px}
+      h1{font-size:22px}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Status fita legado -->
+  <div id="fitaStatus" style="margin-top:12px;font-weight:700;">
+    Fita: <span id="fitaBadge" class="badge gray">INICIADO</span>
+  </div>
+
+  <h1>Parâmetros do PID</h1>
+
+  <!-- Abas -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="controle">Controle</button>
+    <button class="tab-btn" data-tab="informacoes">Informações</button>
+  </div>
+
+  <!-- ABA: CONTROLE -->
+  <section id="tab-controle" class="tab active">
+    <!-- CONTROLES PID originais -->
+    <!-- Kp -->
+    <div class="parametro">
+      <div class="label">Kp =</div>
+      <div class="bloco">
+        <div class="grupo">
+          <div class="caixa"><div class="seta" onclick="alterar('kp0',1,0,9)">▲</div><div class="valor" id="kp0">0</div><div class="seta" onclick="alterar('kp0',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('kp1',1,0,9)">▲</div><div class="valor" id="kp1">0</div><div class="seta" onclick="alterar('kp1',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('kp2',1,0,9)">▲</div><div class="valor" id="kp2">0</div><div class="seta" onclick="alterar('kp2',-1,0,9)">▼</div></div>
+        </div>
+        <div style="font-size:16px;margin:0 6px;">×10^</div>
+        <div class="caixa"><div class="seta" onclick="alterar('kp3',1,-99,99)">▲</div><div class="valor" id="kp3">0</div><div class="seta" onclick="alterar('kp3',-1,-99,99)">▼</div></div>
+      </div>
+    </div>
+
+    <!-- Ki -->
+    <div class="parametro">
+      <div class="label">Ki =</div>
+      <div class="bloco">
+        <div class="grupo">
+          <div class="caixa"><div class="seta" onclick="alterar('ki0',1,0,9)">▲</div><div class="valor" id="ki0">0</div><div class="seta" onclick="alterar('ki0',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('ki1',1,0,9)">▲</div><div class="valor" id="ki1">0</div><div class="seta" onclick="alterar('ki1',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('ki2',1,0,9)">▲</div><div class="valor" id="ki2">0</div><div class="seta" onclick="alterar('ki2',-1,0,9)">▼</div></div>
+        </div>
+        <div style="font-size:16px;margin:0 6px;">×10^</div>
+        <div class="caixa"><div class="seta" onclick="alterar('ki3',1,-99,99)">▲</div><div class="valor" id="ki3">0</div><div class="seta" onclick="alterar('ki3',-1,-99,99)">▼</div></div>
+      </div>
+    </div>
+
+    <!-- Kd -->
+    <div class="parametro">
+      <div class="label">Kd =</div>
+      <div class="bloco">
+        <div class="grupo">
+          <div class="caixa"><div class="seta" onclick="alterar('kd0',1,0,9)">▲</div><div class="valor" id="kd0">0</div><div class="seta" onclick="alterar('kd0',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('kd1',1,0,9)">▲</div><div class="valor" id="kd1">0</div><div class="seta" onclick="alterar('kd1',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('kd2',1,0,9)">▲</div><div class="valor" id="kd2">0</div><div class="seta" onclick="alterar('kd2',-1,0,9)">▼</div></div>
+        </div>
+        <div style="font-size:16px;margin:0 6px;">×10^</div>
+        <div class="caixa"><div class="seta" onclick="alterar('kd3',1,-99,99)">▲</div><div class="valor" id="kd3">0</div><div class="seta" onclick="alterar('kd3',-1,-99,99)">▼</div></div>
+      </div>
+    </div>
+
+    <!-- v -->
+    <div class="parametro">
+      <div class="label">v =</div>
+      <div class="bloco">
+        <div class="grupo">
+          <div class="caixa"><div class="seta" onclick="alterar('v0',1,0,9)">▲</div><div class="valor" id="v0">0</div><div class="seta" onclick="alterar('v0',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('v1',1,0,9)">▲</div><div class="valor" id="v1">0</div><div class="seta" onclick="alterar('v1',-1,0,9)">▼</div></div>
+          <div class="caixa"><div class="seta" onclick="alterar('v2',1,0,9)">▲</div><div class="valor" id="v2">0</div><div class="seta" onclick="alterar('v2',-1,0,9)">▼</div></div>
+        </div>
+      </div>
+    </div>
+
+    
+  </section>
+
+  <!-- ABA: INFORMAÇÕES -->
+  <!-- ABA: INFORMAÇÕES -->
+<section id="tab-informacoes" class="tab">
+  <div class="card">
+    <div class="row"><div><b>Modo atual</b></div><div id="modeBadge" class="badge gray">NEUTRO</div></div>
+    <div class="row"><div><b>Running</b></div><div id="runningBadge" class="badge red">PARADO</div></div>
+  </div>
+
+  <!-- Display 1: Velocidades angulares -->
+  <div class="card">
+    <div class="row"><div><b>Velocidade Esquerda (wE)</b></div><div id="wEVal" class="badge blue">--</div></div>
+    <div class="row"><div><b>Velocidade Direita (wD)</b></div><div id="wDVal" class="badge blue">--</div></div>
+  </div>
+
+  <!-- Display 2: PWM aplicado (%) -->
+  <div class="card">
+    <div class="row"><div><b>PWM Esquerda</b></div><div id="pwmEVal" class="badge orange">--</div></div>
+    <div class="row"><div><b>PWM Direita</b></div><div id="pwmDVal" class="badge orange">--</div></div>
+  </div>
+  <div class="card">
+  <div class="row">
+    <div><b>Sensores QTR</b> <small>(0–1000)</small></div>
+    <div id="qtrAvg" class="badge gray">Média: --</div>
+  </div>
+  <div id="qtrGrid" class="sensor-grid"></div>
+</div>
+</section>
+<div class="botoes-container">
+      <button id="btnAtualizar" class="btn" onclick="atualizar()">Atualizar</button>
+      <button id="btnAndarParar" class="btn btn-status green" data-state="andar" onclick="toggleAndarParar()">Andar</button>
+
+      <!-- NOVO: botão de calibração -->
+      <button id="btnCalibrar" class="btn">Calibrar QTR</button>
+      <div id="calibStatus" class="badge gray" style="margin-top:6px;">Pronto</div>
+
+      <div id="wsStatus">WS: desconectado</div>
+    </div>
+
+    <div style="margin-top:8px;">Posição: <span id="posicaoVal">--</span></div>
+    <script>
+        let ws;
+  
+</script>
+
+
+  <script>
+    // Navegação de abas (UX sem dependência)
+    document.querySelectorAll('.tab-btn').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+        btn.classList.add('active');
+        const id = btn.dataset.tab;
+        document.getElementById('tab-'+id).classList.add('active');
+      });
+    });
+  </script>
+
+  <script>
+    // Antizoom mobile
+    document.addEventListener('dblclick', e => { e.preventDefault(); }, { passive:false });
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', e => {
+      const now = Date.now(); if (now - lastTouchEnd <= 300) e.preventDefault(); lastTouchEnd = now;
+    }, { passive:false });
+    document.addEventListener('gesturestart', e => { e.preventDefault(); }, { passive:false });
+  </script>
+
+  <script>
+    function alterar(id, delta, min, max){
+      let el=document.getElementById(id); let v=parseInt(el.innerText,10); if(isNaN(v)) v=0;
+      const n=v+delta; if(n>=min && n<=max) el.innerText=n;
+    }
+    function getVelFromDigits(){
+      let a=+document.getElementById('v0').innerText||0;
+      let b=+document.getElementById('v1').innerText||0;
+      let c=+document.getElementById('v2').innerText||0;
+      return a + b*0.1 + c*0.01;
+    }
+    function getMantissaExp(d0,d1,d2,expId){
+      let a=+document.getElementById(d0).innerText||0;
+      let b=+document.getElementById(d1).innerText||0;
+      let c=+document.getElementById(d2).innerText||0;
+      let expo=+document.getElementById(expId).innerText||0;
+      let mant=a + b*0.1 + c*0.01; return {mant,expo};
+    }
+
+    // Badges util
+    function setModeBadge(mode){
+      const el=document.getElementById('modeBadge');
+      const m=(mode||'neutro').toLowerCase();
+      el.className='badge ' + (m==='frente'?'green': m==='curva'?'blue':'gray');
+      el.textContent=m.toUpperCase();
+    }
+    function setRunningBadge(running){
+      const el=document.getElementById('runningBadge');
+      if(running){ el.className='badge green'; el.textContent='ANDANDO'; }
+      else{ el.className='badge red'; el.textContent='PARADO'; }
+    }
+    function updateFitaBadge(value){
+      const badge=document.getElementById('fitaBadge');
+      const map={1:{txt:'ESQ',color:'#007bff'},2:{txt:'DIR',color:'#ff9800'},3:{txt:'AMBOS',color:'#28a745'}};
+      const cfg=map[value]||{txt:'-',color:'#6c757d'};
+      badge.textContent=cfg.txt; badge.className='badge'; badge.style.background=cfg.color;
+    }
+
+    // WebSocket
+    
+    function connectWS(){
+      const host=location.hostname || "192.168.4.1";
+      ws = new WebSocket('ws://'+host+':81/');
+      const statusEl=document.getElementById('wsStatus');
+
+      ws.onopen=()=>{ statusEl.innerText='Conexão WS: conectado'; ws.send(JSON.stringify({type:"request_params"})); };
+      ws.onclose=()=>{ statusEl.innerText='Conexão WS: desconectado'; setTimeout(connectWS,1000); };
+      ws.onerror=()=>{ statusEl.innerText='Conexão WS: erro'; };
+      /*ws.onmessage=(evt)=>{
+        try{
+          const msg=JSON.parse(evt.data);
+
+          // legado: sinal/fita
+          if(msg.type==="signal") updateFitaBadge(msg.value);
+
+          // params iniciais
+          if(msg.type==="params") setUIFromParams(msg);
+
+          // telemetria posicao
+          if(msg.type==="telemetry" && msg.data && typeof msg.data.posicao!=='undefined'){
+            document.getElementById('posicaoVal').textContent = Math.round(msg.data.posicao);
+          }
+
+          // NOVO: modo atual vindo do firmware
+          if(msg.type==="mode" && msg.mode){
+            setModeBadge(msg.mode);
+            if(typeof msg.running!=='undefined') setRunningBadge(!!msg.running);
+          }
+
+          // NOVO: feedback de calibração
+          if(msg.type==="calib"){
+            const st = (msg.state||'').toLowerCase();
+            const lbl = document.getElementById('calibStatus');
+            const btn = document.getElementById('btnCalibrar');
+            if(st==='start'){
+              lbl.className='badge orange'; lbl.textContent='Calibrando…';
+              btn.disabled=true;
+            }else if(st==='done'){
+              lbl.className='badge green'; lbl.textContent='Calibração concluída';
+              btn.disabled=false;
+            }else if(st==='error'){
+              lbl.className='badge red'; lbl.textContent='Erro na calibração';
+              btn.disabled=false;
+            }
+          }
+
+        }catch(e){ console.log("msg inválida",evt.data); }
+      };
+      // ...
+        */
+      ws.onmessage=(evt)=>{
+    try{
+      const msg=JSON.parse(evt.data);
+
+      if(msg.type==="signal") updateFitaBadge(msg.value);
+      if(msg.type==="params") setUIFromParams(msg);
+
+      // Telemetria: posição (legado)
+      if(msg.type==="telemetry" && msg.data){
+        if(typeof msg.data.posicao!=='undefined'){
+          document.getElementById('posicaoVal').textContent = Math.round(msg.data.posicao);
+        }
+        // NOVO: velocidades angulares
+        if(typeof msg.data.wE!=='undefined'){
+          document.getElementById('wEVal').textContent = Number(msg.data.wE).toFixed(2);
+        }
+        if(typeof msg.data.wD!=='undefined'){
+          document.getElementById('wDVal').textContent = Number(msg.data.wD).toFixed(2);
+        }
+        // NOVO: PWM em %
+        if(typeof msg.data.pwmE!=='undefined'){
+          document.getElementById('pwmEVal').textContent = Math.round(msg.data.pwmE)+'%';
+        }
+        if(typeof msg.data.pwmD!=='undefined'){
+          document.getElementById('pwmDVal').textContent = Math.round(msg.data.pwmD)+'%';
+        }
+      }
+
+      if(msg.type==="mode" && msg.mode){
+        setModeBadge(msg.mode);
+        if(typeof msg.running!=='undefined') setRunningBadge(!!msg.running);
+      }
+
+      // Feedback de calibração (já existia)
+      if(msg.type==="calib"){
+        const st=(msg.state||'').toLowerCase();
+        const lbl=document.getElementById('calibStatus');
+        const btn=document.getElementById('btnCalibrar');
+        if(st==='start'){ lbl.className='badge orange'; lbl.textContent='Calibrando…'; btn.disabled=true; }
+        else if(st==='done'){ lbl.className='badge green'; lbl.textContent='Calibração concluída'; btn.disabled=false; }
+        else if(st==='error'){ lbl.className='badge red'; lbl.textContent='Erro na calibração'; btn.disabled=false; }
+      }
+    }catch(e){ console.log("msg inválida",evt.data); }
+  };
+  // ...
+
+
+  ws.onmessage = (evt) => {
+  try{
+    const msg = JSON.parse(evt.data);
+
+    // ... (seus handlers já existentes: params, mode, calib, telemetry etc.)
+
+    // NOVO: pacote exclusivo de sensores (todos ao mesmo tempo)
+    if (msg.type === "sensors" && Array.isArray(msg.s) && msg.s.length === 16) {
+      const arr = msg.s; // 16 valores 0..1000
+      let soma = 0;
+
+      for (let i = 0; i < 16; i++) {
+        const v = Number(arr[i]) || 0;
+        const pct = Math.max(0, Math.min(100, Math.round(v / 10))); // 0..100%
+        const fill = document.getElementById('sfill' + i);
+        const lab  = document.getElementById('sval' + i);
+        if (fill) fill.style.height = pct + '%';
+        if (lab)  lab.textContent   = v;
+        soma += v;
+      }
+
+      // (opcional) mostrar média no badge
+      const avg = Math.round(soma / 16);
+      const avgEl = document.getElementById('qtrAvg');
+      if (avgEl) { avgEl.textContent = 'Média: ' + avg; avgEl.className = 'badge blue'; }
+
+      // (opcional) usar seq/pos p/ debug
+      // console.log('sensors seq=', msg.seq, 'pos=', msg.pos);
+    }
+
+  }catch(e){ console.log("msg inválida", evt.data); }
+};
+    }
+
+    function setUIFromParams(msg){
+      function decompose(val){
+        if(!isFinite(val)||val===0) return [0,0,0,0];
+        let expo=Math.floor(Math.log10(Math.abs(val)));
+        let mant=val/Math.pow(10,expo);
+        let scaled=Math.round(mant*100+1e-12);
+        if(scaled>=1000){ scaled=100; expo+=1; }
+        let d0=Math.floor(scaled/100), d1=Math.floor((scaled%100)/10), d2=scaled%10;
+        return [d0,d1,d2,expo];
+      }
+      // Kp
+      if(typeof msg.Kp==='number'){ let k=decompose(msg.Kp);
+        kp0.innerText=k[0]; kp1.innerText=k[1]; kp2.innerText=k[2]; }
+      kp3.innerText = (typeof msg.multiP!=='undefined')? msg.multiP : kp3.innerText;
+      // Ki
+      if(typeof msg.Ki==='number'){ let k=decompose(msg.Ki);
+        ki0.innerText=k[0]; ki1.innerText=k[1]; ki2.innerText=k[2]; }
+      ki3.innerText = (typeof msg.multiI!=='undefined')? msg.multiI : ki3.innerText;
+      // Kd
+      if(typeof msg.Kd==='number'){ let k=decompose(msg.Kd);
+        kd0.innerText=k[0]; kd1.innerText=k[1]; kd2.innerText=k[2]; }
+      kd3.innerText = (typeof msg.multiD!=='undefined')? msg.multiD : kd3.innerText;
+      // vel
+      if(typeof msg.vel==='number'){
+        let v=Math.abs(msg.vel); let v0=Math.floor(v); let v1=Math.floor((v-v0)*10); let v2=Math.floor((v-v0-v1*0.1)*100);
+        v0=document.getElementById('v0').innerText=v0; document.getElementById('v1').innerText=v1; document.getElementById('v2').innerText=v2;
+      }
+      // running
+      if(typeof msg.running!=='undefined'){
+        const btn=document.getElementById('btnAndarParar');
+        if(msg.running){ btn.setAttribute('data-state','andar'); btn.classList.remove('red'); btn.classList.add('green'); btn.innerText='Andar'; }
+        else{ btn.setAttribute('data-state','parar'); btn.classList.remove('green'); btn.classList.add('red'); btn.innerText='Parar'; }
+        setRunningBadge(!!msg.running);
+      }
+      // se firmware já sinalizar modo no pacote params:
+      if(typeof msg.mode==='string') setModeBadge(msg.mode);
+    }
+
+    function atualizar(){
+      if(!ws || ws.readyState!==WebSocket.OPEN){ console.log("WS não conectado"); return; }
+      const obj={
+        type:"update_digits",
+        kp0:+kp0.innerText||0, kp1:+kp1.innerText||0, kp2:+kp2.innerText||0, kp3:+kp3.innerText||0,
+        ki0:+ki0.innerText||0, ki1:+ki1.innerText||0, ki2:+ki2.innerText||0, ki3:+ki3.innerText||0,
+        kd0:+kd0.innerText||0, kd1:+kd1.innerText||0, kd2:+kd2.innerText||0, kd3:+kd3.innerText||0,
+        v0:+v0.innerText||0,   v1:+v1.innerText||0,   v2:+v2.innerText||0
+      };
+      ws.send(JSON.stringify(obj));
+      console.log("Enviado update_digits",obj);
+    }
+
+    function toggleAndarParar(){
+      const btn=document.getElementById('btnAndarParar');
+      const state=btn.getAttribute('data-state');
+      if(state==='andar'){
+        btn.setAttribute('data-state','parar'); btn.classList.remove('green'); btn.classList.add('red'); btn.innerText='Parar';
+        if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'toggle',state:'parar'}));
+        setRunningBadge(false);
+      }else{
+        btn.setAttribute('data-state','andar'); btn.classList.remove('red'); btn.classList.add('green'); btn.innerText='Andar';
+        if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'toggle',state:'andar'}));
+        setRunningBadge(true);
+      }
+    }
+
+    // NOVO: handler do botão de calibração
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const btn=document.getElementById('btnCalibrar');
+      const lbl=document.getElementById('calibStatus');
+      btn.addEventListener('click',()=>{
+        if(!ws || ws.readyState!==WebSocket.OPEN){ lbl.className='badge red'; lbl.textContent='WS não conectado'; return; }
+        // feedback imediato (optimistic UI)
+        lbl.className='badge orange'; lbl.textContent='Calibrando…';
+        btn.disabled=true;
+        ws.send(JSON.stringify({type:'calibrate', action:'start'}));
+      });
+    });
+
+    window.addEventListener('load', ()=>{
+      const btn=document.getElementById('btnAndarParar');
+      btn.setAttribute('data-state','andar'); btn.classList.remove('red'); btn.classList.add('green'); btn.innerText='Andar';
+      connectWS();
+    });
+    
+  </script>
+  <script>
+  function buildQtrGrid(){
+    const grid = document.getElementById('qtrGrid');
+    if(!grid) return;
+    for(let i=0;i<16;i++){
+      const el = document.createElement('div');
+      el.className = 'sensor';
+      el.innerHTML = `
+        <div class="slot">
+          <div class="fill" id="sfill${i}"></div>
+        </div>
+        <div class="meta">
+          <span class="idx">S${i}</span>
+          <span id="sval${i}">--</span>
+        </div>`;
+      grid.appendChild(el);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', buildQtrGrid);
+</script>
+</body>
+</html>

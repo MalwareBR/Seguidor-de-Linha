@@ -3,7 +3,7 @@
      - WebSockets by Markus Sattler
      - ArduinoJson
      - QTRSensors
-     - LittleFS (ESP32 core)
+     - LittleFS_esp32 by lorol
 */
 
 #include <Arduino.h>
@@ -19,11 +19,15 @@ const int PwmPinME = 2;    // motor esquerdo (PWM)
 const int PwmPinMD = 15;   // motor direito (PWM)
 const int freq     = 10000; // Hz
 const int res      = 10;    // bits (0..1023)
+float porCurva = 75.0;
+float porReta = 85.0;
+float porMax = porReta;
+
 
 const float compEixo = 0.2f;
 const float rodaR    = 0.016f;
 float wE, wD;
-float wMaxE = 85.87f, wMaxD = 86.56f;
+float wMaxE = 100.00f, wMaxD = 100.00f;
 float wMinE = 0.0f,  wMinD = 0.0f;
 
 QTRSensors qtr;
@@ -42,9 +46,9 @@ int   erro    = 0;
 float valorPID;
 
 // Mantissas + expoentes
-float Kp = 7.0f; int multiP = -3;
+float Kp = 4.0f; int multiP = -1;
 float Ki = 0.0f; int multiI = 1;
-float Kd = 1.0f; int multiD = -3;
+float Kd = 5.0f; int multiD = -2;
 
 // Derivativo filtrado
 unsigned long lastMicros = 0;
@@ -53,21 +57,38 @@ float derivRaw = 0.0f;
 float derivFiltered = 0.0f;
 float derivTau = 0.02f;
 
+// ================= Mode / Signal =================
+// modos do seguidor
+enum FollowerMode { MODE_NEUTRO = 0, MODE_FRENTE = 1, MODE_CURVA = 2 };
+FollowerMode modeAtual = MODE_NEUTRO;
+
 // Sinais laterais
+// tempo (ms) que bloqueia novas detecções após reconhecer AMBOS
+const unsigned long BOTH_SUPPRESS_MS = 250;
+unsigned long bothSuppressUntil = 0;
 const uint16_t SINAL_LIMTE = 500;
-const uint8_t  CONSECUTIVO = 2;
+#define CONSECUTIVO 1            // mantém ou ajuste
 uint8_t esqConsecutivo = 0, dirConsecutivo = 0;
 enum SignalState { SIN_NADA = 0, SIN_ESQ = 1, SIN_DIR = 2, SIN_AMBOS = 3 };
 SignalState sinalAtual = SIN_NADA, sinalAnterior = SIN_NADA;
+
+// auxiliares para lógica de modos
+unsigned long curvaEnteredAt = 0;
+int rightCountWhileFrente = 0; // conta direitas enquanto em FRENTE
+
+// --- novo: estatística do erro enquanto em curva
+int maxAbsErrorSinceCurve = 0;
+const unsigned long CURVA_STABLE_WINDOW_MS = 1200; // janela usada para decisão
+const int CURVA_ERROR_THRESHOLD = 500;           // threshold para "ainda em curva"
+
+// Flag de run/stop — **começa parado** conforme pedido
+volatile bool running = false;
 
 // ===== WiFi + HTTP + WS =====
 const char* ap_ssid     = "PID_Robot";
 const char* ap_password = "12345678";
 WebServer server(80);
 WebSocketsServer webSocket(81);
-
-// Flag de run/stop
-volatile bool running = true;
 
 // Utils
 static inline float mapf(float x, float in_min, float in_max, float out_min, float out_max) {
@@ -84,6 +105,15 @@ void sendParamsToClient(uint8_t clientNum){
   doc["Kd"]      = Kd;      doc["multiD"] = multiD;
   doc["vel"]     = vel;
   doc["running"] = running ? 1 : 0;
+
+  // adiciona o mode como string para a UI inicial saber qual é o modo
+  switch (modeAtual) {
+    case MODE_NEUTRO: doc["mode"] = "neutro"; break;
+    case MODE_FRENTE: doc["mode"] = "frente"; break;
+    case MODE_CURVA:  doc["mode"] = "curva";  break;
+    default:          doc["mode"] = "neutro"; break;
+  }
+
   String out;  serializeJson(doc, out);
   webSocket.sendTXT(clientNum, out);
 }
@@ -91,6 +121,114 @@ void sendParamsToClient(uint8_t clientNum){
 void broadcastParams() {
   uint8_t nc = webSocket.connectedClients();
   for (uint8_t i = 0; i < nc; ++i) sendParamsToClient(i);
+}
+
+// envia modo atual (substitui envio de 'signal')
+void broadcastMode() {
+  StaticJsonDocument<128> doc;
+  doc["type"] = "mode";
+  switch(modeAtual) {
+    case MODE_NEUTRO: doc["mode"] = "neutro"; break;
+    case MODE_FRENTE: doc["mode"] = "frente"; break;
+    case MODE_CURVA:  doc["mode"] = "curva";  break;
+  }
+  doc["running"] = running ? 1 : 0;
+  String out; serializeJson(doc, out);
+  webSocket.broadcastTXT(out);
+}
+
+// =================== aplica transição de modo a partir do sinal detectado
+void applySignalToMode(SignalState s) {
+  // s representa o sinal recém-confirmado (SIN_ESQ, SIN_DIR, SIN_AMBOS, SIN_NADA)
+  unsigned long now = millis();
+
+  // NADA não altera modos (apenas usado p/ transições dependendo do caso)
+  if (s == SIN_NADA) {
+    // não altera modo; apenas retorna
+    return;
+  }
+
+  if (s == SIN_AMBOS && running == true) {
+    // sempre vira pra FRENTE (e reinicia contadores)
+    modeAtual = MODE_FRENTE;
+    maxAbsErrorSinceCurve = 0;
+    porMax = porReta;
+    running = true;
+    rightCountWhileFrente = 0;
+    // reset curva timer
+    curvaEnteredAt = 0;
+    Serial.println("[MODE] AMBOS -> FRENTE");
+    broadcastMode();
+    return;
+  }
+
+  if (s == SIN_DIR && running == true) { // direita
+    if (modeAtual == MODE_NEUTRO) {
+      // primeira direita: inicia percurso -> FRENTE
+      modeAtual = MODE_FRENTE;
+      maxAbsErrorSinceCurve = 0;
+      porMax = porReta;
+      rightCountWhileFrente = 1; // primeira direita
+      curvaEnteredAt = 0;
+      Serial.println("[MODE] NEUTRO + DIR -> FRENTE (1)");
+      broadcastMode();
+      return;
+    } else if (modeAtual == MODE_FRENTE || modeAtual == MODE_CURVA) {
+      // se já estiver em FRENTE, incrementa contador: se >=2 -> para e volta NEUTRO
+      rightCountWhileFrente++;
+      Serial.printf("[MODE] DIR while FRENTE -> count=%d\n", rightCountWhileFrente);
+      if (rightCountWhileFrente >= 2) {
+        modeAtual = MODE_NEUTRO;
+        porMax = porReta;
+        maxAbsErrorSinceCurve = 0;
+        //running = false;
+        rightCountWhileFrente = 0;
+        curvaEnteredAt = 0;
+        Serial.println("[MODE] 2ª DIR detectada -> PARAR + NEUTRO");
+        broadcastMode();
+      }
+      return;
+    }
+    return;
+  }
+
+  if (s == SIN_ESQ && running == true) { // esquerda
+    if (modeAtual != MODE_CURVA) {
+      // entrar em CURVA
+      modeAtual = MODE_CURVA;
+      porMax = porCurva;
+      curvaEnteredAt = now;
+      maxAbsErrorSinceCurve = abs(erro); // reinicia estatística
+      // ao entrar em curva, resetamos contador de direitas
+      rightCountWhileFrente = 0;
+      Serial.println("[MODE] qualquer -> CURVA (entrando)");
+      broadcastMode();
+      return;
+    } else {
+      // já está em CURVA e recebeu outra esquerda: decidir se volta pra FRENTE
+      unsigned long sinceCurve = now - curvaEnteredAt;
+
+      // Se dentro da janela curta e o máximo erro observado ainda é grande,
+      // mantemos CURVA. Caso contrário, vamos pra FRENTE.
+      if ((sinceCurve <= CURVA_STABLE_WINDOW_MS) && (maxAbsErrorSinceCurve > CURVA_ERROR_THRESHOLD)) {
+        // permanecer em CURVA
+        Serial.printf("[MODE] CURVA: nova ESQ recebida mas maxAbsErr=%d (> %d) dentro %lums -> permanecer CURVA\n",
+                      maxAbsErrorSinceCurve, CURVA_ERROR_THRESHOLD, sinceCurve);
+        return;
+      } else {
+        // volta pra FRENTE
+        modeAtual = MODE_FRENTE;
+        porMax = porReta;
+        running = true;
+        rightCountWhileFrente = 0;
+        curvaEnteredAt = 0;
+        maxAbsErrorSinceCurve = 0; // reset
+        Serial.println("[MODE] CURVA + ESQ -> FRENTE");
+        broadcastMode();
+        return;
+      }
+    }
+  }
 }
 
 // =================== WS: eventos ===================
@@ -139,7 +277,10 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
     const char* s = doc["state"];
     running = (s && strcmp(s, "andar") == 0);
     Serial.printf("[WS] toggle -> running=%d\n", running ? 1 : 0);
+    // ao alternar running manualmente, não alteramos mode automaticamente
     broadcastParams();
+    // enviamos também o mode para a UI ficar consistente
+    broadcastMode();
     return;
   }
 
@@ -153,8 +294,8 @@ void motor(float we, float wd) {
     analogWrite(PwmPinMD, 0);
     return;
   }
-  float porE = constrain(mapf(we, 0.0f, wMaxE, 20.0f, 100.0f), 0.0f, 78.0f);
-  float porD = constrain(mapf(wd, 0.0f, wMaxD, 20.0f, 100.0f), 0.0f, 78.0f);
+  float porE = constrain(mapf(we, 0.0f, wMaxE, 20.0f, 100.0f), 0.0f, porMax);
+  float porD = constrain(mapf(wd, 0.0f, wMaxD, 20.0f, 100.0f), 0.0f, porMax);
 
   int maxDuty = (1 << res) - 1;
   int dutyE = constrain((int)mapf(porE, 0.0f, 100.0f, 0.0f, (float)maxDuty), 0, maxDuty);
@@ -166,37 +307,64 @@ void motor(float we, float wd) {
 
 // =================== Sinais laterais ===================
 void checkSinais() {
-  bool esqCond=false, dirCond=false;
+  bool esqCond = false, dirCond = false;
 
-  if (sensorValues[0] < SINAL_LIMTE && sensorValues[1] < SINAL_LIMTE && sensorValues[2] < SINAL_LIMTE) {
-    esqConsecutivo = min<uint8_t>(CONSECUTIVO, esqConsecutivo+1);
-  } else esqConsecutivo = 0;
+  // atualiza contadores por lado (usa os teus sensores 0/1 e 15/14)
+  if (sensorValues[0] < SINAL_LIMTE && sensorValues[1] < SINAL_LIMTE) {
+    esqConsecutivo = min<uint8_t>(CONSECUTIVO, esqConsecutivo + 1);
+  } else {
+    esqConsecutivo = 0;
+  }
   esqCond = (esqConsecutivo >= CONSECUTIVO);
 
-  if (sensorValues[15] < SINAL_LIMTE && sensorValues[14] < SINAL_LIMTE && sensorValues[13] < SINAL_LIMTE) {
-    dirConsecutivo = min<uint8_t>(CONSECUTIVO, dirConsecutivo+1);
-  } else dirConsecutivo = 0;
+  if (sensorValues[15] < SINAL_LIMTE && sensorValues[14] < SINAL_LIMTE) {
+    dirConsecutivo = min<uint8_t>(CONSECUTIVO, dirConsecutivo + 1);
+  } else {
+    dirConsecutivo = 0;
+  }
   dirCond = (dirConsecutivo >= CONSECUTIVO);
 
-  if (esqCond && dirCond)      sinalAtual = SIN_AMBOS;
-  else if (esqCond)            sinalAtual = SIN_ESQ;
-  else if (dirCond)            sinalAtual = SIN_DIR;
-  else                         sinalAtual = SIN_NADA;
+  unsigned long now = millis();
 
-  if (sinalAtual != sinalAnterior) {
-    sinalAnterior = sinalAtual;
-    switch (sinalAtual) {
-      case SIN_NADA: Serial.println("Sinal: NADA"); break;
-      case SIN_ESQ:  Serial.println("Sinal: ESQ detectou (0,1,2)"); break;
-      case SIN_DIR:  Serial.println("Sinal: DIR detectou (15,14,13)"); break;
-      case SIN_AMBOS:Serial.println("Sinal: AMBOS detectou"); break;
+  // verifica condição extra para 'AMBOS' (sensores 5,6,9,10 abaixo do limite)
+  bool bothExtra = (sensorValues[5]  < SINAL_LIMTE) &&
+                   (sensorValues[6]  < SINAL_LIMTE) &&
+                   (sensorValues[9]  < SINAL_LIMTE) &&
+                   (sensorValues[10] < SINAL_LIMTE);
+
+  // calcula candidato imediato:
+  SignalState candidate;
+  if      (bothExtra)                      candidate = SIN_AMBOS;
+  else if (esqCond)                        candidate = SIN_ESQ;
+  else if (dirCond)                        candidate = SIN_DIR;
+  else                                     candidate = SIN_NADA;
+
+  // Se recentemente detectámos AMBOS, bloqueamos reconhecimento de outros sinais
+  if (now < bothSuppressUntil) {
+    if (candidate != SIN_AMBOS) {
+      // ignorar mudanças até supressão passar (mas permitir AMBOS se reaparecer)
+      return;
     }
-    broadcastSignal(sinalAtual);
+    // se candidate == AMBOS, deixaremos processar mais abaixo
   }
-  wsSendKV( esqCond);
+
+  // se candidato mudou (ou se é AMBOS e for imediato), processar
+  if (candidate != sinalAtual) {
+    sinalAnterior = sinalAtual;
+    sinalAtual = candidate;
+
+    // quando for AMBOS, iniciar supressão
+    if (sinalAtual == SIN_AMBOS) {
+      bothSuppressUntil = now + BOTH_SUPPRESS_MS;
+    }
+
+    // aplicar modo baseado no sinal confirmado
+    applySignalToMode(sinalAtual);
+  }
 }
 
 void broadcastSignal(SignalState s){
+  // OBS: função mantida apenas para compatibilidade - NÃO usaremos mais 'signal' no front.
   StaticJsonDocument<64> doc;
   doc["type"]="signal";
   doc["value"]=(int)s; // 0=NADA,1=ESQ,2=DIR,3=AMBOS
@@ -209,6 +377,7 @@ void wsSendKV(bool esquerda) {
   doc["type"] = "telemetry";
   JsonObject d = doc.createNestedObject("data");
   d["esquerda"] = esquerda;
+  d["posicao"] = posicao;
   String out; serializeJson(doc, out);
   webSocket.broadcastTXT(out);
 }
@@ -221,6 +390,12 @@ void pid() {
 
   erro  = ref - (int)posicao;
   Pterm = erro;
+
+  // atualiza estatística de erro se estivermos em CURVA
+  if (modeAtual == MODE_CURVA) {
+    int a = abs(erro);
+    if (a > maxAbsErrorSinceCurve) maxAbsErrorSinceCurve = a;
+  }
 
   derivRaw = ((float)erro - (float)erroAnt) / dt;
   float alpha = expf(-dt / derivTau);
@@ -296,7 +471,6 @@ void setup() {
     }
   });
 
-  //server.on("/", [](){ server.send_P(200, "text/html", index_html); });
   server.begin();
 
   webSocket.begin();
